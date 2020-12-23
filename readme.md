@@ -12,7 +12,7 @@ BIFI Governance Token:
 
 ### Governance Pools
 
-The governance pools are using the same contracts as the first YearnRewards governance pool. We are strong believers on using battle tested code whenever possible. While our community needs to innovate on building new yield maximizing strategies. We don’t need to innovate on things that already worked. We also wanted to make it as easy as possible to check that the source code is correct.
+The governance pools are using the same contracts as the first YearnRewards governance pool. We are strong believers in using battle tested code whenever possible, while our community needs to innovate on building new yield maximizing strategies. We don’t need to innovate on things that already work. We also wanted to make it as easy as possible to check that the source code is correct.
 
 Pool 1: wBNB — 14.000 $BIFI  
 [0x55bb4ff561ce7d328ed10af322a14dc9c972f653](https://bscscan.com/address/0x55bb4ff561ce7d328ed10af322a14dc9c972f653)
