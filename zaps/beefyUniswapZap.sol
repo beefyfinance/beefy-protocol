@@ -126,10 +126,9 @@ contract BeefyUniV2Zap {
 
     function _getSwapAmount(uint256 investmentA, uint256 reserveA, uint256 reserveB) private view returns (uint256 swapAmount) {
         uint256 halfInvestment = investmentA / 2;
-        uint256 swapExactQuote = router.quote(halfInvestment, reserveA, reserveB);
-        uint256 swapOutputAmount = router.getAmountOut(halfInvestment, reserveA, reserveB);
-        swapAmount = investmentA.sub(Babylonian.sqrt(halfInvestment * halfInvestment * swapOutputAmount / swapExactQuote));
-        require(swapAmount > halfInvestment, 'swapInvestmentAmount should be greater than halfInvestment');
+        uint256 nominator = router.getAmountOut(halfInvestment, reserveA, reserveB);
+        uint256 denominator = router.quote(halfInvestment, reserveA.add(halfInvestment), reserveB.sub(nominator));
+        swapAmount = investmentA.sub(Babylonian.sqrt(halfInvestment * halfInvestment * nominator / denominator));
     }
 
     function _approveTokenIfNeeded(address token, address spender) private {
