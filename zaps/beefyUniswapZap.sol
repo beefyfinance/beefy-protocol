@@ -17,7 +17,6 @@ pragma solidity >=0.6.2;
 
 import '@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol';
 import '@uniswap/lib/contracts/libraries/Babylonian.sol';
-// import '@uniswap/v2-core/contracts/interfaces/IUniswapV2ERC20.sol';
 
 import 'https://github.com/Uniswap/uniswap-v2-periphery/blob/master/contracts/interfaces/IUniswapV2Router02.sol';
 
@@ -51,6 +50,14 @@ contract BeefyUniV2Zap {
         assert(msg.sender == router.WETH());
     }
 
+    function beefInETH (address beefyVault, uint tokenAmountOutMin) external payable {
+        require(msg.value >= minimumAmount, 'Beefy: Insignificant input amount');
+
+        IWETH(router.WETH()).deposit{value: msg.value}();
+
+        _swapAndStake(beefyVault, tokenAmountOutMin, router.WETH());
+    }
+
     function beefIn (address beefyVault, uint tokenAmountOutMin, address tokenIn, uint tokenInAmount) external {
         require(tokenInAmount >= minimumAmount, 'Beefy: Insignificant input amount');
         require(IERC20(tokenIn).allowance(msg.sender, address(this)) >= tokenInAmount, 'Beefy: Input token is not approved');
@@ -58,14 +65,6 @@ contract BeefyUniV2Zap {
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), tokenInAmount);
 
         _swapAndStake(beefyVault, tokenAmountOutMin, tokenIn);
-    }
-
-    function beefInETH (address beefyVault, uint tokenAmountOutMin) external payable {
-        require(msg.value >= minimumAmount, 'Beefy: Insignificant input amount');
-
-        IWETH(router.WETH()).deposit{value: msg.value}();
-
-        _swapAndStake(beefyVault, tokenAmountOutMin, router.WETH());
     }
 
     function beefOut (address beefyVault, uint withdrawAmount) external {
@@ -91,6 +90,36 @@ contract BeefyUniV2Zap {
         tokens[1] = pair.token1();
 
         _returnAssets(tokens);
+    }
+
+    function beefOutAndSwap (address beefyVault, uint withdrawAmount, address desiredToken, uint256 desiredTokenOutMin) external {
+        (IBeefyVault vault, IUniswapV2Pair pair) = _getVaultPair(beefyVault);
+        address token0 = pair.token0();
+        address token1 = pair.token1();
+        require(token0 == desiredToken || token1 == desiredToken, 'Beefy: desired token not present in liqudity pair');
+
+        IERC20(beefyVault).safeTransferFrom(msg.sender, address(this), withdrawAmount);
+        vault.withdraw(withdrawAmount);
+        _removeLiqudity(address(pair), address(this));
+
+        address swapToken = token1 == desiredToken ? token0 : token1;
+        address[] memory path = new address[](2);
+        path[0] = swapToken;
+        path[1] = desiredToken;
+
+        _approveTokenIfNeeded(path[0], address(router));
+        uint256 swapAmount = IERC20(swapToken).balanceOf(address(this));
+        uint256[] memory swapedAmounts = router
+            .swapExactTokensForTokens(swapAmount, desiredTokenOutMin, path, address(this), block.timestamp);
+
+        address WETH = router.WETH();
+        if (desiredToken == WETH) {
+            uint256 balanceWETH = IERC20(WETH).balanceOf(address(this));
+            require(balanceWETH > 0, 'Beefy: there is no WETH');
+            IWETH(WETH).withdraw(balanceWETH);
+        }
+
+        _returnAssets(path);
     }
 
     function _removeLiqudity(address pair, address to) private {
@@ -130,13 +159,12 @@ contract BeefyUniV2Zap {
         }
 
         _approveTokenIfNeeded(path[0], address(router));
-        _approveTokenIfNeeded(path[1], address(router));
-
-        uint256[] memory swapAmounts = router
+        uint256[] memory swapedAmounts = router
             .swapExactTokensForTokens(swapAmountIn, tokenAmountOutMin, path, address(this), block.timestamp);
 
+        _approveTokenIfNeeded(path[1], address(router));
         (,, uint256 amountLiquidity) = router
-            .addLiquidity(path[0], path[1], fullInvestment.sub(swapAmounts[0]), swapAmounts[1], 1, 1, address(this), block.timestamp);
+            .addLiquidity(path[0], path[1], fullInvestment.sub(swapedAmounts[0]), swapedAmounts[1], 1, 1, address(this), block.timestamp);
 
         _approveTokenIfNeeded(address(pair), address(vault));
         vault.deposit(amountLiquidity);
