@@ -27,7 +27,7 @@ import 'https://github.com/Uniswap/uniswap-v3-core/blob/main/contracts/libraries
 interface IWETH {
     function deposit() external payable;
     function transfer(address to, uint value) external returns (bool);
-    function withdraw(uint) external;
+    function withdraw(uint256 wad) external;
 }
 
 interface IBeefyVault {
@@ -47,6 +47,10 @@ contract BeefyUniV2Zap {
         router = IUniswapV2Router02(_router);
     }
 
+    receive() external payable {
+        assert(msg.sender == router.WETH());
+    }
+
     function beefIn (address beefyVault, uint tokenAmountOutMin, address tokenIn, uint tokenInAmount) external {
         require(tokenInAmount >= minimumAmount, 'Beefy: Insignificant input amount');
         require(IERC20(tokenIn).allowance(msg.sender, address(this)) >= tokenInAmount, 'Beefy: Input token is not approved');
@@ -64,10 +68,47 @@ contract BeefyUniV2Zap {
         _swapAndStake(beefyVault, tokenAmountOutMin, router.WETH());
     }
 
-    function _swapAndStake(address beefyVault, uint tokenAmountOutMin, address tokenIn) private {
-        IBeefyVault vault = IBeefyVault(beefyVault);
-        IUniswapV2Pair pair = IUniswapV2Pair(vault.token());
+    function beefOut (address beefyVault, uint withdrawAmount) external {
+        (IBeefyVault vault, IUniswapV2Pair pair) = _getVaultPair(beefyVault);
+
+        IERC20(beefyVault).safeTransferFrom(msg.sender, address(this), withdrawAmount);
+        require(IERC20(beefyVault).balanceOf(address(this)) > 0, 'Debug: no vault tokens');
+        vault.withdraw(withdrawAmount);
+        require(IERC20(vault.token()).balanceOf(address(this)) > 0, 'Debug: no lp tokens');
+
+        address WETH = router.WETH();
+        if (pair.token0() != WETH && pair.token1() != WETH) {
+            return _removeLiqudity(address(pair), msg.sender);
+        }
+
+        _removeLiqudity(address(pair), address(this));
+        uint256 balanceWETH = IERC20(WETH).balanceOf(address(this));
+        require(balanceWETH > 0, 'Beefy: there is no WETH');
+        IWETH(WETH).withdraw(balanceWETH);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = pair.token0();
+        tokens[1] = pair.token1();
+
+        _returnAssets(tokens);
+    }
+
+    function _removeLiqudity(address pair, address to) private {
+        IERC20(pair).safeTransfer(pair, IERC20(pair).balanceOf(address(this)));
+        (uint amount0, uint amount1) = IUniswapV2Pair(pair).burn(to);
+
+        require(amount0 >= minimumAmount, 'UniswapV2Router: INSUFFICIENT_A_AMOUNT');
+        require(amount1 >= minimumAmount, 'UniswapV2Router: INSUFFICIENT_B_AMOUNT');
+    }
+
+    function _getVaultPair (address beefyVault) private returns (IBeefyVault vault, IUniswapV2Pair pair) {
+        vault = IBeefyVault(beefyVault);
+        pair = IUniswapV2Pair(vault.token());
         require(pair.factory() == router.factory(), 'Beefy: Incompatible liquidity pair factory');
+    }
+
+    function _swapAndStake(address beefyVault, uint tokenAmountOutMin, address tokenIn) private {
+        (IBeefyVault vault, IUniswapV2Pair pair) = _getVaultPair(beefyVault);
 
         (uint256 reserveA, uint256 reserveB,) = pair.getReserves();
         require(reserveA > minimumAmount && reserveB > minimumAmount, 'Beefy: Liquidity pair reserves too low');
@@ -102,17 +143,17 @@ contract BeefyUniV2Zap {
 
         IERC20 mooToken = IERC20(address(vault));
         mooToken.safeTransfer(msg.sender, mooToken.balanceOf(address(this)));
-        _returnDust(path);
+        _returnAssets(path);
     }
 
-    function _returnDust(address[] memory path) private {
-        IERC20 tokenADust = IERC20(path[0]);
+    function _returnAssets(address[] memory tokens) private {
+        IERC20 tokenADust = IERC20(tokens[0]);
         uint256 tokenABalance = tokenADust.balanceOf(address(this));
         if (tokenABalance > 0) {
             tokenADust.safeTransfer(msg.sender, tokenABalance);
         }
 
-        IERC20 tokenBDust = IERC20(path[1]);
+        IERC20 tokenBDust = IERC20(tokens[1]);
         uint256 tokenBBalance = tokenBDust.balanceOf(address(this));
         if (tokenBBalance > 0) {
             tokenBDust.safeTransfer(msg.sender, tokenBBalance);
@@ -120,7 +161,8 @@ contract BeefyUniV2Zap {
 
         uint256 contractBalance = address(this).balance;
         if (contractBalance > 0) {
-            msg.sender.transfer(contractBalance);
+            (bool success,) = msg.sender.call{value: contractBalance}(new bytes(0));
+            require(success, 'Beefy: ETH transfer failed');
         }
     }
 
