@@ -32,7 +32,7 @@ interface IWETH {
 interface IBeefyVault {
     function deposit(uint256 amount) external;
     function withdraw(uint256 shares) external;
-    function token() external returns (address);
+    function token() external pure returns (address);
 }
 
 contract BeefyUniV2Zap {
@@ -122,7 +122,7 @@ contract BeefyUniV2Zap {
         require(amount1 >= minimumAmount, 'UniswapV2Router: INSUFFICIENT_B_AMOUNT');
     }
 
-    function _getVaultPair (address beefyVault) private returns (IBeefyVault vault, IUniswapV2Pair pair) {
+    function _getVaultPair (address beefyVault) private view returns (IBeefyVault vault, IUniswapV2Pair pair) {
         vault = IBeefyVault(beefyVault);
         pair = IUniswapV2Pair(vault.token());
         require(pair.factory() == router.factory(), 'Beefy: Incompatible liquidity pair factory');
@@ -189,6 +189,21 @@ contract BeefyUniV2Zap {
         uint256 nominator = router.getAmountOut(halfInvestment, reserveA, reserveB);
         uint256 denominator = router.quote(halfInvestment, reserveA.add(halfInvestment), reserveB.sub(nominator));
         swapAmount = investmentA.sub(Babylonian.sqrt(halfInvestment * halfInvestment * nominator / denominator));
+    }
+
+    function estimateSwap(address beefyVault, address tokenIn, uint256 fullInvestmentIn) public view returns(uint256 swapAmountIn, uint256 swapAmountOut, address swapTokenOut) {
+        (, IUniswapV2Pair pair) = _getVaultPair(beefyVault);
+
+        bool isInputA = pair.token0() == tokenIn;
+        bool isInputB = pair.token1() == tokenIn;
+        require(isInputA || isInputB, 'Beefy: Input token not present in liqudity pair');
+
+        (uint256 reserveA, uint256 reserveB,) = pair.getReserves();
+        (reserveA, reserveB) = isInputA ? (reserveA, reserveB) : (reserveB, reserveA);
+
+        swapAmountIn = _getSwapAmount(fullInvestmentIn, reserveA, reserveB);
+        swapAmountOut = router.getAmountOut(swapAmountIn, reserveA, reserveB);
+        swapTokenOut = isInputB ? pair.token0() : pair.token1();
     }
 
     function _approveTokenIfNeeded(address token, address spender) private {
