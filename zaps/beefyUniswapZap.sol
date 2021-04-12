@@ -109,15 +109,7 @@ contract BeefyUniV2Zap {
 
         _approveTokenIfNeeded(path[0], address(router));
         uint256 swapAmount = IERC20(swapToken).balanceOf(address(this));
-        uint256[] memory swapedAmounts = router
-            .swapExactTokensForTokens(swapAmount, desiredTokenOutMin, path, address(this), block.timestamp);
-
-        address WETH = router.WETH();
-        if (desiredToken == WETH) {
-            uint256 balanceWETH = IERC20(WETH).balanceOf(address(this));
-            require(balanceWETH > 0, 'Beefy: there is no WETH');
-            IWETH(WETH).withdraw(balanceWETH);
-        }
+        router.swapExactTokensForTokens(swapAmount, desiredTokenOutMin, path, address(this), block.timestamp);
 
         _returnAssets(path);
     }
@@ -175,22 +167,20 @@ contract BeefyUniV2Zap {
     }
 
     function _returnAssets(address[] memory tokens) private {
-        IERC20 tokenADust = IERC20(tokens[0]);
-        uint256 tokenABalance = tokenADust.balanceOf(address(this));
-        if (tokenABalance > 0) {
-            tokenADust.safeTransfer(msg.sender, tokenABalance);
-        }
+        uint256 balance;
+        address WETH = router.WETH();
 
-        IERC20 tokenBDust = IERC20(tokens[1]);
-        uint256 tokenBBalance = tokenBDust.balanceOf(address(this));
-        if (tokenBBalance > 0) {
-            tokenBDust.safeTransfer(msg.sender, tokenBBalance);
-        }
-
-        uint256 contractBalance = address(this).balance;
-        if (contractBalance > 0) {
-            (bool success,) = msg.sender.call{value: contractBalance}(new bytes(0));
-            require(success, 'Beefy: ETH transfer failed');
+        for (uint256 i; i < tokens.length; i++) {
+            balance = IERC20(tokens[i]).balanceOf(address(this));
+            if (balance > 0) {
+                if (tokens[i] == WETH) {
+                    IWETH(WETH).withdraw(balance);
+                    (bool success,) = msg.sender.call{value: balance}(new bytes(0));
+                    require(success, 'Beefy: ETH transfer failed');
+                } else {
+                    IERC20(tokens[i]).safeTransfer(msg.sender, balance);
+                }
+            }
         }
     }
 
