@@ -183,6 +183,7 @@ contract BeefyUniV2Zap {
     }
 
     function estimateSwap(address beefyVault, address tokenIn, uint256 fullInvestmentIn) public view returns(uint256 swapAmountIn, uint256 swapAmountOut, address swapTokenOut) {
+        checkWETH();
         (, IUniswapV2Pair pair) = _getVaultPair(beefyVault);
 
         bool isInputA = pair.token0() == tokenIn;
@@ -194,6 +195,11 @@ contract BeefyUniV2Zap {
         swapAmountIn = _getSwapAmount(fullInvestmentIn, reserveA, reserveB);
         swapAmountOut = router.getAmountOut(swapAmountIn, reserveA, reserveB);
         swapTokenOut = isInputA ? pair.token1() : pair.token0();
+    }
+
+    function checkWETH() public view returns (bool isValid) {
+        isValid = WETH == router.WETH();
+        require(isValid, 'Beefy: WETH address not matching Router.WETH()');
     }
 
     function _approveTokenIfNeeded(address token, address spender) private {
