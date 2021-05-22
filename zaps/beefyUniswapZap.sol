@@ -130,7 +130,7 @@ contract BeefyUniV2Zap {
         require(reserveA > minimumAmount && reserveB > minimumAmount, 'Beefy: Liquidity pair reserves too low');
 
         bool isInputA = pair.token0() == tokenIn;
-        require(isInputA || pair.token1() == tokenIn, 'Beefy: Input token not present in liqudity pair');
+        require(isInputA || pair.token1() == tokenIn, 'Beefy: Input token not present in liquidity pair');
 
         address[] memory path = new address[](2);
         path[0] = tokenIn;
